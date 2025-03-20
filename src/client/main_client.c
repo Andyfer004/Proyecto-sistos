@@ -3,6 +3,8 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <pthread.h> // Para manejar hilos
+#include <unistd.h>  // Para `read`
 #include <libwebsockets.h>
 #include "client.h" // Incluir el header de las utilidades del cliente
 
@@ -54,6 +56,80 @@ static struct lws_protocols protocols[] = {
     },
     {NULL, NULL, 0, 0}};
 
+void *user_input_thread(void *arg)
+{
+    struct lws *wsi = (struct lws *)arg;
+    char input[256];
+
+    while (1)
+    {
+        printf("\nComandos disponibles:\n");
+        printf("1. list - Listar usuarios conectados\n");
+        printf("2. broadcast <mensaje> - Enviar mensaje a todos\n");
+        printf("3. private <usuario> <mensaje> - Enviar mensaje privado\n");
+        printf("4. status <ACTIVO|OCUPADO|INACTIVO> - Cambiar estado\n");
+        printf("5. exit - Salir\n");
+        printf("Ingrese comando: ");
+
+        fgets(input, sizeof(input), stdin);
+        input[strcspn(input, "\n")] = '\0'; // Eliminar el salto de línea
+
+        // Comando para listar usuarios
+        if (strcmp(input, "list") == 0)
+        {
+            send_list_users_message(wsi, global_user_name);
+        }
+        // Comando para enviar un mensaje a todos
+        else if (strncmp(input, "broadcast ", 10) == 0)
+        {
+            send_broadcast_message(wsi, global_user_name, input + 10);
+        }
+        // Comando para enviar un mensaje privado
+        else if (strncmp(input, "private ", 8) == 0)
+        {
+            char target[50], message[200];
+            if (sscanf(input + 8, "%49s %199[^\n]", target, message) == 2)
+            {
+                send_private_message(wsi, global_user_name, target, message);
+            }
+            else
+            {
+                printf("Formato incorrecto. Usa: private <usuario> <mensaje>\n");
+            }
+        }
+        // Comando para cambiar estado
+        else if (strncmp(input, "status ", 7) == 0)
+        {
+            char status[20];
+            if (sscanf(input + 7, "%19s", status) == 1)
+            {
+                send_change_status_message(wsi, global_user_name, status);
+            }
+            else
+            {
+                printf("Formato incorrecto. Usa: status <ACTIVO|OCUPADO|INACTIVO>\n");
+            }
+        }
+        // Comando para salir
+        else if (strcmp(input, "exit") == 0)
+        {
+            send_disconnect_message(wsi, global_user_name);
+            printf("Desconectando...\n");
+            interrupted = 1; // Detiene el bucle principal en main()
+            break;
+        }
+        // Comando desconocido
+        else
+        {
+            printf("Comando no reconocido. Intente de nuevo.\n");
+        }
+
+        sleep(1); // Pequeña pausa para evitar que el bucle consuma CPU
+    }
+
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 4)
@@ -84,7 +160,7 @@ int main(int argc, char **argv)
     ccinfo.context = context;
     ccinfo.address = server_addr; // Aquí se asigna la IP del servidor
     ccinfo.port = port;           // Y se asigna el puerto
-    ccinfo.path = "/chat";        // Ruta del endpoint en el servidor
+    ccinfo.path = "/";            // Ruta del endpoint en el servidor
     ccinfo.host = lws_canonical_hostname(context);
     ccinfo.origin = "origin";
     ccinfo.protocol = protocols[0].name;
@@ -98,6 +174,9 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    pthread_t input_thread;
+    pthread_create(&input_thread, NULL, user_input_thread, wsi);
+
     while (!interrupted)
     {
         lws_service(context, 50);
@@ -105,6 +184,16 @@ int main(int argc, char **argv)
         // llamar a otras funciones de client_utils según el comando (broadcast, privado, etc.)
     }
 
-    lws_context_destroy(context);
+    pthread_join(input_thread, NULL);
+
+    // Destruir el contexto una sola vez
+    if (context)
+    {
+        lws_context_destroy(context);
+        context = NULL;
+    }
+
+    printf("Cliente desconectado. Saliendo...\n");
+
     return 0;
 }
