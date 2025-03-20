@@ -115,6 +115,7 @@ void *user_input_thread(void *arg)
         {
             send_disconnect_message(wsi, global_user_name);
             printf("Desconectando...\n");
+            interrupted = 1; // Detiene el bucle principal en main()
             break;
         }
         // Comando desconocido
@@ -183,8 +184,16 @@ int main(int argc, char **argv)
         // llamar a otras funciones de client_utils según el comando (broadcast, privado, etc.)
     }
 
-    lws_context_destroy(context);
-
     pthread_join(input_thread, NULL);
+
+    // Destruir el contexto una sola vez
+    if (context)
+    {
+        lws_context_destroy(context);
+        context = NULL;
+    }
+
+    printf("Cliente desconectado. Saliendo...\n");
+
     return 0;
 }
