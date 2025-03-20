@@ -63,68 +63,85 @@ void *user_input_thread(void *arg)
 
     while (1)
     {
-        printf("\nComandos disponibles:\n");
-        printf("1. list - Listar usuarios conectados\n");
-        printf("2. broadcast <mensaje> - Enviar mensaje a todos\n");
-        printf("3. private <usuario> <mensaje> - Enviar mensaje privado\n");
-        printf("4. status <ACTIVO|OCUPADO|INACTIVO> - Cambiar estado\n");
-        printf("5. exit - Salir\n");
-        printf("Ingrese comando: ");
+        printf("\n========= MENÚ DE CHAT =========\n");
+        printf("1. Chatear con todos (broadcast)\n");
+        printf("2. Enviar mensaje privado\n");
+        printf("3. Cambiar de estado\n");
+        printf("4. Listar usuarios conectados\n");
+        printf("5. Ver información de un usuario\n");
+        printf("6. Ayuda\n");
+        printf("7. Salir\n");
+        printf("Seleccione una opción (1-7): ");
 
         fgets(input, sizeof(input), stdin);
         input[strcspn(input, "\n")] = '\0'; // Eliminar el salto de línea
 
-        // Comando para listar usuarios
-        if (strcmp(input, "list") == 0)
+        if (strcmp(input, "1") == 0)
+        {
+            printf("Escribe el mensaje para enviar a todos: ");
+            fgets(input, sizeof(input), stdin);
+            input[strcspn(input, "\n")] = '\0';
+            send_broadcast_message(wsi, global_user_name, input);
+        }
+        else if (strcmp(input, "2") == 0)
+        {
+            char target[50], message[200];
+            printf("Ingrese el usuario destinatario: ");
+            fgets(target, sizeof(target), stdin);
+            target[strcspn(target, "\n")] = '\0';
+
+            printf("Ingrese el mensaje: ");
+            fgets(message, sizeof(message), stdin);
+            message[strcspn(message, "\n")] = '\0';
+
+            send_private_message(wsi, global_user_name, target, message);
+        }
+        else if (strcmp(input, "3") == 0)
+        {
+            char status[20];
+            printf("Ingrese su nuevo estado (ACTIVO, OCUPADO, INACTIVO): ");
+            fgets(status, sizeof(status), stdin);
+            status[strcspn(status, "\n")] = '\0';
+
+            send_change_status_message(wsi, global_user_name, status);
+        }
+        else if (strcmp(input, "4") == 0)
         {
             send_list_users_message(wsi, global_user_name);
         }
-        // Comando para enviar un mensaje a todos
-        else if (strncmp(input, "broadcast ", 10) == 0)
+        else if (strcmp(input, "5") == 0)
         {
-            send_broadcast_message(wsi, global_user_name, input + 10);
+            char target[50];
+            printf("Ingrese el nombre del usuario: ");
+            fgets(target, sizeof(target), stdin);
+            target[strcspn(target, "\n")] = '\0';
+
+            send_user_info_message(wsi, global_user_name, target);
         }
-        // Comando para enviar un mensaje privado
-        else if (strncmp(input, "private ", 8) == 0)
+        else if (strcmp(input, "6") == 0)
         {
-            char target[50], message[200];
-            if (sscanf(input + 8, "%49s %199[^\n]", target, message) == 2)
-            {
-                send_private_message(wsi, global_user_name, target, message);
-            }
-            else
-            {
-                printf("Formato incorrecto. Usa: private <usuario> <mensaje>\n");
-            }
+            printf("\n=== AYUDA ===\n");
+            printf("1. Chatear con todos: Envía un mensaje público a todos los usuarios.\n");
+            printf("2. Enviar mensaje privado: Especifique un usuario y envíele un mensaje directo.\n");
+            printf("3. Cambiar de estado: Puede cambiar su estado a ACTIVO, OCUPADO o INACTIVO.\n");
+            printf("4. Listar usuarios: Muestra los usuarios conectados al chat.\n");
+            printf("5. Información de un usuario: Muestra detalles sobre un usuario específico.\n");
+            printf("6. Ayuda: Muestra esta información.\n");
+            printf("7. Salir: Desconectarse del servidor y cerrar el programa.\n");
         }
-        // Comando para cambiar estado
-        else if (strncmp(input, "status ", 7) == 0)
-        {
-            char status[20];
-            if (sscanf(input + 7, "%19s", status) == 1)
-            {
-                send_change_status_message(wsi, global_user_name, status);
-            }
-            else
-            {
-                printf("Formato incorrecto. Usa: status <ACTIVO|OCUPADO|INACTIVO>\n");
-            }
-        }
-        // Comando para salir
-        else if (strcmp(input, "exit") == 0)
+        else if (strcmp(input, "7") == 0)
         {
             send_disconnect_message(wsi, global_user_name);
             printf("Desconectando...\n");
-            interrupted = 1; // Detiene el bucle principal en main()
+            interrupted = 1; // Para salir del bucle en main()
             break;
         }
-        // Comando desconocido
         else
         {
-            printf("Comando no reconocido. Intente de nuevo.\n");
+            printf("⚠ Comando no reconocido. Intente nuevamente.\n");
         }
 
-        sleep(1); // Pequeña pausa para evitar que el bucle consuma CPU
+        sleep(1);
     }
 
     return NULL;
