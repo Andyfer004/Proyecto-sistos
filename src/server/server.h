@@ -13,6 +13,7 @@ typedef struct {
     char username[50];
     struct lws *wsi;
     int status; // 0 = ACTIVO, 1 = OCUPADO, 2 = INACTIVO
+    char ip[48]; // NUEVO: para almacenar la dirección IP del cliente
 } User;
 
 extern User users[MAX_USERS];
