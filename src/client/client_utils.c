@@ -4,6 +4,8 @@
 #include <string.h>
 #include <time.h>
 #include <libwebsockets.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 // Definición de un tamaño máximo para los mensajes (puedes ajustarlo si es necesario)
 #define MSG_BUFFER_SIZE 256
@@ -14,6 +16,29 @@ void get_timestamp(char *buffer, size_t size)
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     strftime(buffer, size, "%Y-%m-%dT%H:%M:%S", t);
+}
+
+// Obtiene la primera IP local (no loopback)
+void get_local_ip(char *ip_buffer, size_t size)
+{
+    struct ifaddrs *ifaddr, *ifa;
+    void *addr_ptr;
+
+    getifaddrs(&ifaddr);
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
+    {
+        if (ifa->ifa_addr == NULL)
+            continue;
+
+        if (ifa->ifa_addr->sa_family == AF_INET &&
+            strcmp(ifa->ifa_name, "lo") != 0)
+        {
+            addr_ptr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            inet_ntop(AF_INET, addr_ptr, ip_buffer, size);
+            break;
+        }
+    }
+    freeifaddrs(ifaddr);
 }
 
 // Función interna para enviar un mensaje JSON a través del WebSocket.
@@ -47,10 +72,14 @@ int send_register_message(struct lws *wsi, const char *username)
     char timestamp[64];
     get_timestamp(timestamp, sizeof(timestamp));
 
+    char ip[64];
+    get_local_ip(ip, sizeof(ip)); // <-- nueva línea
+
     char msg[MSG_BUFFER_SIZE];
     snprintf(msg, sizeof(msg),
-             "{\"type\": \"register\", \"sender\": \"%s\", \"content\": null, \"timestamp\": \"%s\"}",
-             username, timestamp);
+             "{\"type\": \"register\", \"sender\": \"%s\", \"content\": {\"ip\": \"%s\"}, \"timestamp\": \"%s\"}",
+             username, ip, timestamp);
+
     return send_message(wsi, msg);
 }
 
