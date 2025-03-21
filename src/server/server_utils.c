@@ -188,6 +188,9 @@ void handle_message(const char *msg, struct lws *wsi) {
         cJSON_AddItemToObject(response, "content", status_obj);
         char *response_str = cJSON_PrintUnformatted(response);
 
+        // Imprimir para depuración
+        printf("Broadcasting status_update: %s\n", response_str);
+
         // Guardar la respuesta en el buffer global para que el callback de escritura la envíe
         pthread_mutex_lock(&broadcast_lock);
         if (g_broadcast_msg) free(g_broadcast_msg);
