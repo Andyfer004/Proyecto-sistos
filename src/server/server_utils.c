@@ -9,49 +9,73 @@ pthread_mutex_t user_lock = PTHREAD_MUTEX_INITIALIZER;
 char *g_broadcast_msg = NULL;
 pthread_mutex_t broadcast_lock = PTHREAD_MUTEX_INITIALIZER;
 
+void *user_thread(void *arg) {
+    User *user = (User *)arg;
+    printf("📌 Hilo creado para %s (ID: %p)\n", user->username, (void *)pthread_self());
 
-int add_user(const char *username, struct lws *wsi)
-{
+    while (1) {
+        // 🔁 Aquí luego podés chequear inactividad, métricas, etc.
+        sleep(1); // evita alto uso de CPU
+    }
+
+    return NULL;
+}
+
+int add_user(const char *username, struct lws *wsi) {
     char client_ip[48] = {0};
     lws_get_peer_simple(wsi, client_ip, sizeof(client_ip));
 
     pthread_mutex_lock(&user_lock);
-    // Verificar si el usuario ya existe (compara nombre e IP)
-    for (int i = 0; i < user_count; i++)
-    {
-        if (strcmp(users[i].username, username) == 0 && strcmp(users[i].ip, client_ip) == 0)
-        {
+    for (int i = 0; i < user_count; i++) {
+        if (strcmp(users[i].username, username) == 0) {
             pthread_mutex_unlock(&user_lock);
-            printf("Error: Usuario %s con IP %s ya existe.\n", username, client_ip);
+            printf("Error: Usuario %s ya existe.\n", username);
             return 0;
         }
     }
-    if (user_count < MAX_USERS)
-    {
+
+    if (user_count < MAX_USERS) {
         strcpy(users[user_count].username, username);
         users[user_count].wsi = wsi;
-        users[user_count].status = 0; // ACTIVO
+        users[user_count].status = 0;
         strcpy(users[user_count].ip, client_ip);
+    
+        // 🔹 Lanzar hilo para este usuario
+        if (pthread_create(&users[user_count].thread_id, NULL, user_thread, &users[user_count]) != 0) {
+            printf("❌ No se pudo crear hilo para %s\n", username);
+            pthread_mutex_unlock(&user_lock);
+            return 0;
+        }
+        printf("✅ Hilo creado para %s con ID %p\n", username, (void *)users[user_count].thread_id);
+    
         user_count++;
-    }
+    }    
     pthread_mutex_unlock(&user_lock);
     return 1;
 }
 
-void remove_user(struct lws *wsi)
-{
+void remove_user(struct lws *wsi) {
     pthread_mutex_lock(&user_lock);
-    for (int i = 0; i < user_count; i++)
-    {
-        if (users[i].wsi == wsi)
-        {
+
+    for (int i = 0; i < user_count; i++) {
+        if (users[i].wsi == wsi) {
+            printf("🧹 Eliminando usuario: %s (hilo: %p)\n", users[i].username, (void *)users[i].thread_id);
+
+            // 🔹 Cancelar y unir el hilo del usuario
+            pthread_cancel(users[i].thread_id);
+            pthread_join(users[i].thread_id, NULL);
+
+            // 🔹 Liberar posición moviendo el último usuario al actual
             users[i] = users[user_count - 1];
             user_count--;
+
             break;
         }
     }
+
     pthread_mutex_unlock(&user_lock);
 }
+
 
 void broadcast_message(const char *message)
 {
