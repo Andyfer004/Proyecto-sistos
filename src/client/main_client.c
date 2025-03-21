@@ -7,9 +7,11 @@
 #include <unistd.h>  // Para `read`
 #include <libwebsockets.h>
 #include "client.h" // Incluir el header de las utilidades del cliente
+#include <cjson/cJSON.h>
 
 static char *global_user_name = NULL;
 static int interrupted = 0;
+static int connection_failed = 0;
 
 static void sigint_handler(int sig)
 {
@@ -29,8 +31,24 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
         break;
 
     case LWS_CALLBACK_CLIENT_RECEIVE:
+    {
         printf("Mensaje recibido: %s\n", (char *)in);
+
+        cJSON *json = cJSON_Parse((char *)in);
+        if (!json)
+            break;
+
+        cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
+        if (cJSON_IsString(type) && strcmp(type->valuestring, "error") == 0)
+        {
+            printf("Error recibido del servidor. Cancelando conexión...\n");
+            connection_failed = 1; // <-- MARCA EL ERROR
+            interrupted = 1;       // <-- Detiene el bucle principal
+        }
+
+        cJSON_Delete(json);
         break;
+    }
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         // En este ejemplo, la escritura se realiza cuando se recibe la notificación.
@@ -192,6 +210,24 @@ int main(int argc, char **argv)
     }
 
     pthread_t input_thread;
+
+    // Esperamos un pequeño tiempo para que llegue la respuesta del servidor
+    int wait_ms = 0;
+    while (!connection_failed && wait_ms < 500)
+    {
+        lws_service(context, 50); // Esperar respuesta del servidor
+        wait_ms += 50;
+    }
+
+    // Si hubo error, salir
+    if (connection_failed)
+    {
+        printf("No se pudo conectar correctamente. Cerrando cliente.\n");
+        lws_context_destroy(context);
+        return -1;
+    }
+
+    // Si no hubo error, lanzar el hilo de entrada
     pthread_create(&input_thread, NULL, user_input_thread, wsi);
 
     while (!interrupted)
