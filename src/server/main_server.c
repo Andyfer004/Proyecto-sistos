@@ -72,10 +72,9 @@ int main(int argc, char *argv[]) {
     }
     
     printf("Servidor WebSocket en puerto %d\n", port);
-
-
+    
     while (1) {
-        lws_service(context, 50);
+        lws_service(context, 50); // 🔹 Ahora solo maneja nuevas conexiones
     }
 
     lws_context_destroy(context);
