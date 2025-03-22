@@ -8,6 +8,7 @@
 #include <libwebsockets.h>
 #include "client.h" // Incluir el header de las utilidades del cliente
 #include <cjson/cJSON.h>
+#include <pthread.h>
 
 static char *global_user_name = NULL;
 static int interrupted = 0;
@@ -16,6 +17,16 @@ static int connection_failed = 0;
 static void sigint_handler(int sig)
 {
     interrupted = 1;
+}
+
+void *send_private_message_thread(void *arg)
+{
+    PrivateMessageArgs *args = (PrivateMessageArgs *)arg;
+
+    send_private_message(args->wsi, args->sender, args->target, args->message);
+
+    free(args); // liberar memoria asignada al struct
+    return NULL;
 }
 
 static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
@@ -135,7 +146,7 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
 
                 if (cJSON_IsString(sender) && cJSON_IsString(content) && cJSON_IsString(timestamp))
                 {
-                    printf("\nMensaje de %s: %s\n", sender->valuestring, content->valuestring);
+                    printf("\nMensaje para todos %s: %s\n", sender->valuestring, content->valuestring);
                     printf("Timestamp: %s\n\n", timestamp->valuestring);
                 }
             }
@@ -251,7 +262,6 @@ void *user_input_thread(void *arg)
                 perror("Error leyendo el usuario destinatario");
                 continue;
             }
-
             target[strcspn(target, "\n")] = '\0';
 
             printf("Ingrese el mensaje: ");
@@ -262,8 +272,31 @@ void *user_input_thread(void *arg)
             }
             message[strcspn(message, "\n")] = '\0';
 
-            send_private_message(wsi, global_user_name, target, message);
+            // Crear struct para pasar al hilo
+            PrivateMessageArgs *args = malloc(sizeof(PrivateMessageArgs));
+            if (!args)
+            {
+                perror("No se pudo asignar memoria para mensaje privado");
+                continue;
+            }
+
+            args->wsi = wsi;
+            strncpy(args->sender, global_user_name, sizeof(args->sender));
+            strncpy(args->target, target, sizeof(args->target));
+            strncpy(args->message, message, sizeof(args->message));
+
+            pthread_t pm_thread;
+            if (pthread_create(&pm_thread, NULL, send_private_message_thread, args) != 0)
+            {
+                perror("No se pudo crear el hilo para mensaje privado");
+                free(args);
+            }
+            else
+            {
+                pthread_detach(pm_thread); // No necesitás esperar el hilo
+            }
         }
+
         else if (strcmp(input, "3") == 0)
         {
             char status[20];

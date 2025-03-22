@@ -3,6 +3,14 @@
 
 #include <libwebsockets.h>
 
+typedef struct
+{
+    struct lws *wsi;
+    char sender[50];
+    char target[50];
+    char message[200];
+} PrivateMessageArgs;
+
 // Obtiene el timestamp actual en formato ISO 8601 y lo guarda en el buffer.
 void get_timestamp(char *buffer, size_t size);
 
