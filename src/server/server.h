@@ -15,6 +15,7 @@ typedef struct {
     int status; // 0 = ACTIVO, 1 = OCUPADO, 2 = INACTIVO
     char ip[48]; // NUEVO: para almacenar la dirección IP del cliente
     pthread_t thread_id; // 🔹 ID del hilo asociado al usuario
+    time_t last_activity;
 } User;
 
 extern User users[MAX_USERS];
