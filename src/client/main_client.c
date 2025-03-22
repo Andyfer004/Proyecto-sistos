@@ -32,7 +32,7 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
 
     case LWS_CALLBACK_CLIENT_RECEIVE:
     {
-        printf("Mensaje recibido: %s\n", (char *)in);
+        printf("\nMensaje recibido: %s\n", (char *)in);
 
         cJSON *json = cJSON_Parse((char *)in);
         if (!json)
@@ -127,6 +127,39 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
                     printf("Timestamp: %s\n\n", timestamp->valuestring);
                 }
             }
+            else if (strcmp(type->valuestring, "broadcast") == 0)
+            {
+                cJSON *sender = cJSON_GetObjectItem(json, "sender");
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(sender) && cJSON_IsString(content) && cJSON_IsString(timestamp))
+                {
+                    printf("\nMensaje de %s: %s\n", sender->valuestring, content->valuestring);
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "private") == 0)
+            {
+                cJSON *sender = cJSON_GetObjectItem(json, "sender");
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(sender) && cJSON_IsString(content) && cJSON_IsString(timestamp))
+                {
+                    printf("\nMensaje privado de %s: %s\n", sender->valuestring, content->valuestring);
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "server") == 0)
+            {
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+
+                if (cJSON_IsString(content))
+                {
+                    printf("\nMensaje del servidor: %s\n\n", content->valuestring);
+                }
+            }
             else if (strcmp(type->valuestring, "error") == 0)
             {
                 cJSON *content = cJSON_GetObjectItem(json, "content");
@@ -191,13 +224,21 @@ void *user_input_thread(void *arg)
         printf("7. Salir\n");
         printf("Seleccione una opción (1-7): ");
 
-        fgets(input, sizeof(input), stdin);
+        if (!fgets(input, sizeof(input), stdin))
+        {
+            perror("Error leyendo entrada");
+            continue;
+        }
         input[strcspn(input, "\n")] = '\0'; // Eliminar el salto de línea
 
         if (strcmp(input, "1") == 0)
         {
             printf("Escribe el mensaje para enviar a todos: ");
-            fgets(input, sizeof(input), stdin);
+            if (!fgets(input, sizeof(input), stdin))
+            {
+                perror("Error leyendo entrada");
+                continue;
+            }
             input[strcspn(input, "\n")] = '\0';
             send_broadcast_message(wsi, global_user_name, input);
         }
@@ -205,11 +246,20 @@ void *user_input_thread(void *arg)
         {
             char target[50], message[200];
             printf("Ingrese el usuario destinatario: ");
-            fgets(target, sizeof(target), stdin);
+            if (!fgets(target, sizeof(target), stdin))
+            {
+                perror("Error leyendo el usuario destinatario");
+                continue;
+            }
+
             target[strcspn(target, "\n")] = '\0';
 
             printf("Ingrese el mensaje: ");
-            fgets(message, sizeof(message), stdin);
+            if (!fgets(message, sizeof(message), stdin))
+            {
+                perror("Error leyendo el mensaje");
+                continue;
+            }
             message[strcspn(message, "\n")] = '\0';
 
             send_private_message(wsi, global_user_name, target, message);
@@ -218,7 +268,11 @@ void *user_input_thread(void *arg)
         {
             char status[20];
             printf("Ingrese su nuevo estado (ACTIVO, OCUPADO, INACTIVO): ");
-            fgets(status, sizeof(status), stdin);
+            if (!fgets(status, sizeof(status), stdin))
+            {
+                perror("Error leyendo el estado");
+                continue;
+            };
             status[strcspn(status, "\n")] = '\0';
 
             send_change_status_message(wsi, global_user_name, status);
@@ -231,7 +285,11 @@ void *user_input_thread(void *arg)
         {
             char target[50];
             printf("Ingrese el nombre del usuario: ");
-            fgets(target, sizeof(target), stdin);
+            if (!fgets(target, sizeof(target), stdin))
+            {
+                perror("Error leyendo el nombre del usuario");
+                continue;
+            };
             target[strcspn(target, "\n")] = '\0';
 
             send_user_info_message(wsi, global_user_name, target);
