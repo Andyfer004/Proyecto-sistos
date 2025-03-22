@@ -14,8 +14,44 @@ void *user_thread(void *arg) {
     printf("📌 Hilo creado para %s (ID: %p)\n", user->username, (void *)pthread_self());
 
     while (1) {
-        // 🔁 Aquí luego podés chequear inactividad, métricas, etc.
-        sleep(1); // evita alto uso de CPU
+        sleep(1);
+
+        time_t now = time(NULL);
+        int debe_cambiar = 0;
+
+        pthread_mutex_lock(&user_lock);
+        if (user->status != 2 && difftime(now, user->last_activity) >= 10) {
+            user->status = 2;
+            debe_cambiar = 1;
+        }
+        pthread_mutex_unlock(&user_lock);
+
+        if (debe_cambiar) {
+            printf("🟡 Usuario %s pasó a INACTIVO\n", user->username);
+
+            cJSON *response = cJSON_CreateObject();
+            cJSON_AddStringToObject(response, "type", "status_update");
+            cJSON_AddStringToObject(response, "sender", "server");
+
+            cJSON *status_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(status_obj, "user", user->username);
+            cJSON_AddStringToObject(status_obj, "status", "INACTIVO");
+            cJSON_AddItemToObject(response, "content", status_obj);
+
+            char timestamp[32];
+            strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", localtime(&now));
+            cJSON_AddStringToObject(response, "timestamp", timestamp);
+
+            char *msg = cJSON_PrintUnformatted(response);
+            pthread_mutex_lock(&broadcast_lock);
+            if (g_broadcast_msg) free(g_broadcast_msg);
+            g_broadcast_msg = strdup(msg);
+            pthread_mutex_unlock(&broadcast_lock);
+            broadcast_message(msg);
+
+            free(msg);
+            cJSON_Delete(response);
+        }
     }
 
     return NULL;
@@ -24,6 +60,7 @@ void *user_thread(void *arg) {
 int add_user(const char *username, struct lws *wsi) {
     char client_ip[48] = {0};
     lws_get_peer_simple(wsi, client_ip, sizeof(client_ip));
+    users[user_count].last_activity = time(NULL);
 
     pthread_mutex_lock(&user_lock);
     for (int i = 0; i < user_count; i++) {
@@ -125,6 +162,15 @@ void handle_message(const char *msg, struct lws *wsi)
         send_error(wsi, "Mensaje JSON inválido");
         return;
     }
+
+    pthread_mutex_lock(&user_lock);
+    for (int i = 0; i < user_count; i++) {
+        if (users[i].wsi == wsi) {
+            users[i].last_activity = time(NULL); // ⏱️ Marca la actividad
+            break;
+        }
+    }
+    pthread_mutex_unlock(&user_lock);
 
     // Validar campo "type"
     cJSON *type_item = cJSON_GetObjectItem(json, "type");
