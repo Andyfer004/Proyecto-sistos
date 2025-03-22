@@ -9,25 +9,29 @@ pthread_mutex_t user_lock = PTHREAD_MUTEX_INITIALIZER;
 char *g_broadcast_msg = NULL;
 pthread_mutex_t broadcast_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void *user_thread(void *arg) {
+void *user_thread(void *arg)
+{
     User *user = (User *)arg;
-    printf("📌 Hilo creado para %s (ID: %p)\n", user->username, (void *)pthread_self());
+    printf("Hilo creado para %s (ID: %p)\n", user->username, (void *)pthread_self());
 
-    while (1) {
+    while (1)
+    {
         sleep(1);
 
         time_t now = time(NULL);
         int debe_cambiar = 0;
 
         pthread_mutex_lock(&user_lock);
-        if (user->status != 2 && difftime(now, user->last_activity) >= 10) {
+        if (user->status != 2 && difftime(now, user->last_activity) >= 10)
+        {
             user->status = 2;
             debe_cambiar = 1;
         }
         pthread_mutex_unlock(&user_lock);
 
-        if (debe_cambiar) {
-            printf("🟡 Usuario %s pasó a INACTIVO\n", user->username);
+        if (debe_cambiar)
+        {
+            printf("Usuario %s pasó a INACTIVO\n", user->username);
 
             cJSON *response = cJSON_CreateObject();
             cJSON_AddStringToObject(response, "type", "status_update");
@@ -44,7 +48,8 @@ void *user_thread(void *arg) {
 
             char *msg = cJSON_PrintUnformatted(response);
             pthread_mutex_lock(&broadcast_lock);
-            if (g_broadcast_msg) free(g_broadcast_msg);
+            if (g_broadcast_msg)
+                free(g_broadcast_msg);
             g_broadcast_msg = strdup(msg);
             pthread_mutex_unlock(&broadcast_lock);
             broadcast_message(msg);
@@ -57,46 +62,54 @@ void *user_thread(void *arg) {
     return NULL;
 }
 
-int add_user(const char *username, struct lws *wsi) {
+int add_user(const char *username, struct lws *wsi)
+{
     char client_ip[48] = {0};
     lws_get_peer_simple(wsi, client_ip, sizeof(client_ip));
     users[user_count].last_activity = time(NULL);
 
     pthread_mutex_lock(&user_lock);
-    for (int i = 0; i < user_count; i++) {
-        if (strcmp(users[i].username, username) == 0) {
+    for (int i = 0; i < user_count; i++)
+    {
+        if (strcmp(users[i].username, username) == 0)
+        {
             pthread_mutex_unlock(&user_lock);
             printf("Error: Usuario %s ya existe.\n", username);
             return 0;
         }
     }
 
-    if (user_count < MAX_USERS) {
+    if (user_count < MAX_USERS)
+    {
         strcpy(users[user_count].username, username);
         users[user_count].wsi = wsi;
         users[user_count].status = 0;
         strcpy(users[user_count].ip, client_ip);
-    
+
         // 🔹 Lanzar hilo para este usuario
-        if (pthread_create(&users[user_count].thread_id, NULL, user_thread, &users[user_count]) != 0) {
-            printf("❌ No se pudo crear hilo para %s\n", username);
+        if (pthread_create(&users[user_count].thread_id, NULL, user_thread, &users[user_count]) != 0)
+        {
+            printf("No se pudo crear hilo para %s\n", username);
             pthread_mutex_unlock(&user_lock);
             return 0;
         }
-        printf("✅ Hilo creado para %s con ID %p\n", username, (void *)users[user_count].thread_id);
-    
+        printf("Hilo creado para %s con ID %p\n", username, (void *)users[user_count].thread_id);
+
         user_count++;
-    }    
+    }
     pthread_mutex_unlock(&user_lock);
     return 1;
 }
 
-void remove_user(struct lws *wsi) {
+void remove_user(struct lws *wsi)
+{
     pthread_mutex_lock(&user_lock);
 
-    for (int i = 0; i < user_count; i++) {
-        if (users[i].wsi == wsi) {
-            printf("🧹 Eliminando usuario: %s (hilo: %p)\n", users[i].username, (void *)users[i].thread_id);
+    for (int i = 0; i < user_count; i++)
+    {
+        if (users[i].wsi == wsi)
+        {
+            printf("Eliminando usuario: %s (hilo: %p)\n", users[i].username, (void *)users[i].thread_id);
 
             // 🔹 Cancelar y unir el hilo del usuario
             pthread_cancel(users[i].thread_id);
@@ -112,7 +125,6 @@ void remove_user(struct lws *wsi) {
 
     pthread_mutex_unlock(&user_lock);
 }
-
 
 void broadcast_message(const char *message)
 {
@@ -164,8 +176,10 @@ void handle_message(const char *msg, struct lws *wsi)
     }
 
     pthread_mutex_lock(&user_lock);
-    for (int i = 0; i < user_count; i++) {
-        if (users[i].wsi == wsi) {
+    for (int i = 0; i < user_count; i++)
+    {
+        if (users[i].wsi == wsi)
+        {
             users[i].last_activity = time(NULL); // ⏱️ Marca la actividad
             break;
         }
@@ -340,7 +354,14 @@ void handle_message(const char *msg, struct lws *wsi)
                 cJSON_AddStringToObject(response, "timestamp", timestamp);
 
                 char *response_str = cJSON_PrintUnformatted(response);
-                lws_write(users[i].wsi, (unsigned char *)response_str, strlen(response_str), LWS_WRITE_TEXT);
+                size_t msg_len = strlen(response_str);
+                unsigned char *buf = malloc(LWS_PRE + msg_len);
+                if (buf)
+                {
+                    memcpy(buf + LWS_PRE, response_str, msg_len);
+                    lws_write(users[i].wsi, buf + LWS_PRE, msg_len, LWS_WRITE_TEXT);
+                    free(buf);
+                }
                 free(response_str);
                 cJSON_Delete(response);
                 break;
