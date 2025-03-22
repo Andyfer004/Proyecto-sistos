@@ -38,12 +38,112 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
         if (!json)
             break;
 
+        // Esto sirve para identificar el tipo de mensaje recibido
         cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
-        if (cJSON_IsString(type) && strcmp(type->valuestring, "error") == 0)
+
+        if (cJSON_IsString(type))
         {
-            printf("Error recibido del servidor. Cancelando conexión...\n");
-            connection_failed = 1; // <-- MARCA EL ERROR
-            interrupted = 1;       // <-- Detiene el bucle principal
+            if (strcmp(type->valuestring, "user_info_response") == 0)
+            {
+                cJSON *target = cJSON_GetObjectItem(json, "target");
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *ip = cJSON_GetObjectItem(content, "ip");
+                cJSON *status = cJSON_GetObjectItem(content, "status");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(target) && cJSON_IsString(ip) && cJSON_IsString(status) && cJSON_IsString(timestamp))
+                {
+                    printf("\nInformación del usuario: %s\n", target->valuestring);
+                    printf("   Estado: %s\n", status->valuestring);
+                    printf("   IP: %s\n", ip->valuestring);
+                    printf("   Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "register_success") == 0)
+            {
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *userList = cJSON_GetObjectItem(json, "userList");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(content) && cJSON_IsArray(userList) && cJSON_IsString(timestamp))
+                {
+                    printf("\nRegistro exitoso: %s\n", content->valuestring);
+                    printf("Usuarios conectados:\n");
+                    int size = cJSON_GetArraySize(userList);
+                    for (int i = 0; i < size; i++)
+                    {
+                        cJSON *user = cJSON_GetArrayItem(userList, i);
+                        if (cJSON_IsString(user))
+                        {
+                            printf("   - %s\n", user->valuestring);
+                        }
+                    }
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "list_users_response") == 0)
+            {
+                cJSON *users = cJSON_GetObjectItem(json, "content");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsArray(users) && cJSON_IsString(timestamp))
+                {
+                    printf("\nLista de usuarios conectados:\n");
+                    int size = cJSON_GetArraySize(users);
+                    for (int i = 0; i < size; i++)
+                    {
+                        cJSON *user = cJSON_GetArrayItem(users, i);
+                        if (cJSON_IsString(user))
+                        {
+                            printf("   - %s\n", user->valuestring);
+                        }
+                    }
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "status_update") == 0)
+            {
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *user = cJSON_GetObjectItem(content, "user");
+                cJSON *status = cJSON_GetObjectItem(content, "status");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(user) && cJSON_IsString(status) && cJSON_IsString(timestamp))
+                {
+                    printf("\nEstado actualizado:\n");
+                    printf("   Usuario: %s\n", user->valuestring);
+                    printf("   Nuevo estado: %s\n", status->valuestring);
+                    printf("   Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "user_disconnected") == 0)
+            {
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(content) && cJSON_IsString(timestamp))
+                {
+                    printf("\nUsuario desconectado: %s\n", content->valuestring);
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                }
+            }
+            else if (strcmp(type->valuestring, "error") == 0)
+            {
+                cJSON *content = cJSON_GetObjectItem(json, "content");
+                cJSON *timestamp = cJSON_GetObjectItem(json, "timestamp");
+
+                if (cJSON_IsString(content) && cJSON_IsString(timestamp))
+                {
+                    printf("\nError del servidor: %s\n", content->valuestring);
+                    printf("Timestamp: %s\n\n", timestamp->valuestring);
+                    connection_failed = 1;
+                    interrupted = 1;
+                }
+            }
+            else
+            {
+                printf("Mensaje recibido sin formato especial: %s\n", (char *)in);
+            }
         }
 
         cJSON_Delete(json);

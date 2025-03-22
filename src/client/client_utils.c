@@ -4,8 +4,6 @@
 #include <string.h>
 #include <time.h>
 #include <libwebsockets.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
 
 // Definición de un tamaño máximo para los mensajes (puedes ajustarlo si es necesario)
 #define MSG_BUFFER_SIZE 256
@@ -17,7 +15,6 @@ void get_timestamp(char *buffer, size_t size)
     struct tm *t = localtime(&now);
     strftime(buffer, size, "%Y-%m-%dT%H:%M:%S", t);
 }
-
 
 // Función interna para enviar un mensaje JSON a través del WebSocket.
 static int send_message(struct lws *wsi, const char *json_msg)
@@ -52,8 +49,8 @@ int send_register_message(struct lws *wsi, const char *username)
 
     char msg[MSG_BUFFER_SIZE];
     snprintf(msg, sizeof(msg),
-         "{\"type\": \"register\", \"sender\": \"%s\"}",
-         username);
+             "{\"type\": \"register\", \"sender\": \"%s\"}",
+             username);
 
     return send_message(wsi, msg);
 }
