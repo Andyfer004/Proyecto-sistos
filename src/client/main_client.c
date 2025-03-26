@@ -320,18 +320,33 @@ void *user_input_thread(void *arg)
 
         else if (strcmp(input, "3") == 0)
         {
-            // Opción 3: Cambiar de estado de usuario
             char status[20];
-            printf("Ingrese su nuevo estado (ACTIVO, OCUPADO, INACTIVO): ");
-            if (!fgets(status, sizeof(status), stdin))
+            int valid = 0;
+            while (!valid)
             {
-                perror("Error leyendo el estado");
-                continue;
-            };
-            status[strcspn(status, "\n")] = '\0';
+                printf("Ingrese su nuevo estado (ACTIVO, OCUPADO, INACTIVO): ");
+                if (!fgets(status, sizeof(status), stdin))
+                {
+                    perror("Error leyendo el estado");
+                    continue;
+                }
+                status[strcspn(status, "\n")] = '\0'; // Elimina el salto de línea
 
+                // Verifica si el estado ingresado es uno de los permitidos
+                if (strcmp(status, "ACTIVO") == 0 ||
+                    strcmp(status, "OCUPADO") == 0 ||
+                    strcmp(status, "INACTIVO") == 0)
+                {
+                    valid = 1;
+                }
+                else
+                {
+                    printf("Estado no válido. Por favor, ingrese ACTIVO, OCUPADO o INACTIVO.\n");
+                }
+            }
             send_change_status_message(wsi, global_user_name, status);
         }
+
         else if (strcmp(input, "4") == 0)
         {
             // Opción 4: Listar usuarios conectados
