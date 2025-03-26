@@ -10,17 +10,21 @@
 #include <cjson/cJSON.h>
 #include <pthread.h>
 
+// Variables globales para el nombre de usuario y flags para controlar la ejecución del cliente.
 static char *global_user_name = NULL;
 static int interrupted = 0;
 static int connection_failed = 0;
 
+// Esta función maneja la señal de interrupción (Ctrl+C) para salir del bucle principal.
 static void sigint_handler(int sig)
 {
     interrupted = 1;
 }
 
+// Función que se ejecuta en un hilo separado para enviar un mensaje privado sin bloquear el hilo principal.
 void *send_private_message_thread(void *arg)
 {
+    // Obtener los argumentos del hilo
     PrivateMessageArgs *args = (PrivateMessageArgs *)arg;
 
     send_private_message(args->wsi, args->sender, args->target, args->message);
@@ -29,27 +33,32 @@ void *send_private_message_thread(void *arg)
     return NULL;
 }
 
+// Callback principal para el protocolo de chat. Se invoca en diferentes eventos del ciclo de vida del WebSocket.
 static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
                          void *user, void *in, size_t len)
 {
+    // Manejar los diferentes eventos del ciclo de vida del WebSocket
     switch (reason)
     {
+    // Cuando se establece la conexión con el servidor
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
         lwsl_user("Conexión establecida con el servidor WebSocket\n");
-        // Aquí, en lugar de construir el JSON manualmente,
-        // llamamos a la función de utilidad para enviar el registro.
+
+        // Envía el mensaje de registro para identificar al usuario
         send_register_message(wsi, global_user_name);
         break;
 
+    // Cuando se recibe un mensaje del servidor
     case LWS_CALLBACK_CLIENT_RECEIVE:
     {
         printf("\nMensaje recibido: %s\n", (char *)in);
 
+        // Parsea el mensaje recibido como JSON
         cJSON *json = cJSON_Parse((char *)in);
         if (!json)
             break;
 
-        // Esto sirve para identificar el tipo de mensaje recibido
+        // Obtiene el campo "type" del JSON para determinar el tipo de mensaje
         cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
 
         if (cJSON_IsString(type))
@@ -81,6 +90,8 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
                     printf("\nRegistro exitoso: %s\n", content->valuestring);
                     printf("Usuarios conectados:\n");
                     int size = cJSON_GetArraySize(userList);
+
+                    // Muestra cada usuario conectado
                     for (int i = 0; i < size; i++)
                     {
                         cJSON *user = cJSON_GetArrayItem(userList, i);
@@ -195,10 +206,9 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
     }
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
-        // En este ejemplo, la escritura se realiza cuando se recibe la notificación.
-        // Podrías ampliar este bloque para enviar otros tipos de mensajes basados en entrada del usuario.
         break;
 
+    // Cuando se cierra la conexión
     case LWS_CALLBACK_CLOSED:
         lwsl_user("Conexión cerrada\n");
         break;
@@ -209,15 +219,20 @@ static int callback_chat(struct lws *wsi, enum lws_callback_reasons reason,
     return 0;
 }
 
+// Definición de los protocolos que utilizará libwebsockets.
 static struct lws_protocols protocols[] = {
     {
-        "chat-protocol",
-        callback_chat,
-        0,
-        256,
+        "chat-protocol", // Nombre del protocolo
+        callback_chat,   // Callback para manejar los eventos del WebSocket
+        0,               // Tamaño de la estructura de usuario
+        256,             // Tamaño del buffer de recepción
     },
-    {NULL, NULL, 0, 0}};
+    {NULL, NULL, 0, 0} // Terminador de la lista de protocolos, debe ser NULL porque libwebsockets espera un array de structs con un último elemento nulo.
+};
 
+// Hilo que se encarga de gestionar la entrada del usuario.
+// Muestra un menú de opciones y, según la selección, llama a la función
+// correspondiente para enviar el mensaje o realizar la acción solicitada.
 void *user_input_thread(void *arg)
 {
     struct lws *wsi = (struct lws *)arg;
@@ -225,6 +240,7 @@ void *user_input_thread(void *arg)
 
     while (1)
     {
+        // Menú de opciones
         printf("\n========= MENÚ DE CHAT =========\n");
         printf("1. Chatear con todos (broadcast)\n");
         printf("2. Enviar mensaje privado\n");
@@ -235,6 +251,7 @@ void *user_input_thread(void *arg)
         printf("7. Salir\n");
         printf("Seleccione una opción (1-7): ");
 
+        // Leer la opción ingresada por el usuario
         if (!fgets(input, sizeof(input), stdin))
         {
             perror("Error leyendo entrada");
@@ -244,6 +261,7 @@ void *user_input_thread(void *arg)
 
         if (strcmp(input, "1") == 0)
         {
+            // Option 1: Broadcast message
             printf("Escribe el mensaje para enviar a todos: ");
             if (!fgets(input, sizeof(input), stdin))
             {
@@ -255,6 +273,7 @@ void *user_input_thread(void *arg)
         }
         else if (strcmp(input, "2") == 0)
         {
+            // Option 2: Private message
             char target[50], message[200];
             printf("Ingrese el usuario destinatario: ");
             if (!fgets(target, sizeof(target), stdin))
@@ -272,7 +291,7 @@ void *user_input_thread(void *arg)
             }
             message[strcspn(message, "\n")] = '\0';
 
-            // Crear struct para pasar al hilo
+            // Crear un struct para pasar los parámetros al hilo que envía el mensaje privado
             PrivateMessageArgs *args = malloc(sizeof(PrivateMessageArgs));
             if (!args)
             {
@@ -286,6 +305,7 @@ void *user_input_thread(void *arg)
             strncpy(args->message, message, sizeof(args->message));
 
             pthread_t pm_thread;
+            // Crear el hilo para enviar el mensaje privado
             if (pthread_create(&pm_thread, NULL, send_private_message_thread, args) != 0)
             {
                 perror("No se pudo crear el hilo para mensaje privado");
@@ -293,12 +313,14 @@ void *user_input_thread(void *arg)
             }
             else
             {
-                pthread_detach(pm_thread); // No necesitás esperar el hilo
+                // Se usa pthread_detach para no tener que esperar la finalización del hilo
+                pthread_detach(pm_thread);
             }
         }
 
         else if (strcmp(input, "3") == 0)
         {
+            // Opción 3: Cambiar de estado de usuario
             char status[20];
             printf("Ingrese su nuevo estado (ACTIVO, OCUPADO, INACTIVO): ");
             if (!fgets(status, sizeof(status), stdin))
@@ -312,10 +334,12 @@ void *user_input_thread(void *arg)
         }
         else if (strcmp(input, "4") == 0)
         {
+            // Opción 4: Listar usuarios conectados
             send_list_users_message(wsi, global_user_name);
         }
         else if (strcmp(input, "5") == 0)
         {
+            // Opción 5: Información de un usuario
             char target[50];
             printf("Ingrese el nombre del usuario: ");
             if (!fgets(target, sizeof(target), stdin))
@@ -329,6 +353,7 @@ void *user_input_thread(void *arg)
         }
         else if (strcmp(input, "6") == 0)
         {
+            // Opción 6: Mostrar ayuda con la descripción de las opciones
             printf("\n=== AYUDA ===\n");
             printf("1. Chatear con todos: Envía un mensaje público a todos los usuarios.\n");
             printf("2. Enviar mensaje privado: Especifique un usuario y envíele un mensaje directo.\n");
@@ -340,9 +365,10 @@ void *user_input_thread(void *arg)
         }
         else if (strcmp(input, "7") == 0)
         {
+            // Opción 7: Desconectarse y salir del programa
             send_disconnect_message(wsi, global_user_name);
             printf("Desconectando...\n");
-            interrupted = 1; // Para salir del bucle en main()
+            interrupted = 1; // Indicar que se debe salir del bucle principal
             break;
         }
         else
@@ -356,25 +382,33 @@ void *user_input_thread(void *arg)
     return NULL;
 }
 
+// Función principal que configura la conexión con el servidor WebSocket,
+// crea el contexto de libwebsockets, lanza el hilo de entrada del usuario y
+// procesa los eventos del WebSocket hasta que se interrumpe el programa.
 int main(int argc, char **argv)
 {
+    // Verifica que se hayan pasado los parámetros necesarios
     if (argc < 4)
     {
         fprintf(stderr, "Uso: %s <nombre_usuario> <direccion_servidor> <puerto>\n", argv[0]);
         return -1;
     }
-    global_user_name = argv[1];
-    char *server_addr = argv[2];
-    int port = atoi(argv[3]);
 
+    global_user_name = argv[1];  // Asigna el nombre de usuario global
+    char *server_addr = argv[2]; // Dirección IP o nombre del servidor
+    int port = atoi(argv[3]);    // Puerto del servidor (convertido a entero)
+
+    // Configura el manejador para la señal SIGINT (Ctrl+C)
     signal(SIGINT, sigint_handler);
 
+    // Inicializa la estructura de configuración para el contexto de libwebsockets
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
-    info.port = CONTEXT_PORT_NO_LISTEN;
-    info.protocols = protocols;
-    info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    info.port = CONTEXT_PORT_NO_LISTEN;                   // El cliente no escucha en un puerto específico
+    info.protocols = protocols;                           // Asigna los protocolos definidos
+    info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT; // Inicializa SSL si es necesario
 
+    // Crea el contexto de libwebsockets, que maneja la conexión con el servidor
     struct lws_context *context = lws_create_context(&info);
     if (!context)
     {
@@ -382,16 +416,18 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    // Configura la información para la conexión del cliente
     struct lws_client_connect_info ccinfo = {0};
     ccinfo.context = context;
-    ccinfo.address = server_addr; // Aquí se asigna la IP del servidor
-    ccinfo.port = port;           // Y se asigna el puerto
-    ccinfo.path = "/";            // Ruta del endpoint en el servidor
-    ccinfo.host = lws_canonical_hostname(context);
-    ccinfo.origin = "origin";
-    ccinfo.protocol = protocols[0].name;
-    ccinfo.ietf_version_or_minus_one = -1;
+    ccinfo.address = server_addr;                  // Dirección del servidor
+    ccinfo.port = port;                            // Puerto del servidor
+    ccinfo.path = "/";                             // Ruta del endpoint en el servidor
+    ccinfo.host = lws_canonical_hostname(context); // Nombre canónico del host
+    ccinfo.origin = "origin";                      // Origen de la conexión
+    ccinfo.protocol = protocols[0].name;           // Usa el primer protocolo definido ("chat-protocol")
+    ccinfo.ietf_version_or_minus_one = -1;         // Versión del protocolo IETF o -1 para la versión predeterminada
 
+    // Establece la conexión con el servidor WebSocket
     struct lws *wsi = lws_client_connect_via_info(&ccinfo);
     if (!wsi)
     {
@@ -402,15 +438,15 @@ int main(int argc, char **argv)
 
     pthread_t input_thread;
 
-    // Esperamos un pequeño tiempo para que llegue la respuesta del servidor
+    // Espera brevemente para permitir que el servidor envíe una respuesta inicial
     int wait_ms = 0;
     while (!connection_failed && wait_ms < 500)
     {
-        lws_service(context, 50); // Esperar respuesta del servidor
+        lws_service(context, 50); // Procesa eventos del WebSocket
         wait_ms += 50;
     }
 
-    // Si hubo error, salir
+    // Si hubo error en la conexión, se finaliza el programa
     if (connection_failed)
     {
         printf("No se pudo conectar correctamente. Cerrando cliente.\n");
@@ -421,16 +457,15 @@ int main(int argc, char **argv)
     // Si no hubo error, lanzar el hilo de entrada
     pthread_create(&input_thread, NULL, user_input_thread, wsi);
 
+    // Bucle principal que procesa los eventos del WebSocket hasta que se interrumpe
     while (!interrupted)
     {
         lws_service(context, 50);
-        // Aquí podrías incluir lógica para leer entrada del usuario y
-        // llamar a otras funciones de client_utils según el comando (broadcast, privado, etc.)
     }
 
     pthread_join(input_thread, NULL);
 
-    // Destruir el contexto una sola vez
+    // Destruye el contexto de libwebsockets antes de salir
     if (context)
     {
         lws_context_destroy(context);
